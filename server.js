@@ -97,7 +97,23 @@ connect('mongodb://localhost:27017/api').then(() => {
 
   const Movie = model('Movie', movieSchema);
 
+  function getStatusCode(err) {
+    let status = 500;
 
+    if(err.name === "ValidationError") {
+      status = 400;
+
+      const { errors } = err;
+
+      for(property in errors) {
+        if(errors[property].kind === "unique") {
+          status = 409;
+        }
+      }
+    }
+
+    return status;
+  }
 
   app.get('/', (req, res) => {
     res.json({
@@ -113,64 +129,89 @@ connect('mongodb://localhost:27017/api').then(() => {
     //  - possibilité de donner un paramètre pour limiter le nombre d'items
     //    dans la collection répondue
     //  - possibilité de "paginer" les résultats.
-    const movies = await Movie.find({}).exec();
-    res.json(movies);
+    try {
+      const movies = await Movie.find({}).exec();
+      res.json(movies);
+    } catch(err) {
+      const status = getStatusCode(err);
+      res.status(status).json(err);
+    }
   });
 
   app.get('/movies/:id', async (req, res) => {
     const { id } = req.params;
 
-    const movie = await Movie.findById(id).exec();
+    try {
+      const movie = await Movie.findById(id).exec();
 
-    if(movie) {
-      res.json(movie);
-    } else {
-      res.status(404).json({
-        code: 404,
-        message: "Not Found"
-      });
+      if(movie) {
+        res.json(movie);
+      } else {
+        res.status(404).json({
+          code: 404,
+          message: "Not Found"
+        });
+      }
+    } catch(err) {
+      const status = getStatusCode(err);
+      res.status(status).json(err);
     }
   });
 
   app.post('/movies', async (req, res) => {
     // ajout d'un élément dans la BDD
     const { title, description, year, director, producers } = req.body;
-    const movie = await Movie.create({ title, description, year, director, producers });
-    res.status(201).json(movie);
+    try {
+      const movie = await Movie.create({ title, description, year, director, producers });
+      res.status(201).json(movie);
+    } catch(err) {
+      const status = getStatusCode(err);
+      res.status(status).json(err);
+    }
   });
 
   app.put('/movies/:id', async (req, res) => {
     const { title, description, year, director, producers } = req.body;
     const { id } = req.params;
 
-    const movie = await Movie.findByIdAndUpdate(
-      id,
-      { title, description, year, director, producers },
-      { runValidators: true }
-    );
+    try {
+      const movie = await Movie.findByIdAndUpdate(
+        id,
+        { title, description, year, director, producers },
+        { runValidators: true }
+      );
 
-    if(movie) {
-      res.status(204).end();
-    } else {
-      res.status(404).json({
-        code: 404,
-        message: "Not Found"
-      });
+      if(movie) {
+        res.status(204).end();
+      } else {
+        res.status(404).json({
+          code: 404,
+          message: "Not Found"
+        });
+      }
+    } catch(err) {
+      const status = getStatusCode(err);
+      res.status(status).json(err);
     }
   });
 
   app.delete('/movies/:id', async (req, res) => {
     const { id } = req.params;
 
-    const removed = await Movie.findByIdAndRemove(id);
+    try {
+      const removed = await Movie.findByIdAndRemove(id);
 
-    if(removed) {
-      res.status(204).end();
-    } else {
-      res.status(404).json({
-        code: 404,
-        message: "Not Found"
-      });
+      if(removed) {
+        res.status(204).end();
+      } else {
+        res.status(404).json({
+          code: 404,
+          message: "Not Found"
+        });
+      }
+    } catch(err) {
+      const status = getStatusCode(err);
+      res.status(status).json(err);
     }
   });
 
