@@ -55,21 +55,27 @@ app.use(express.json());
 
 function db_load() {
   return new Promise((resolve, reject) => {
-    fs.readFile('movies.json', { encoding: 'utf8' }, (err, data) => {
-      err ? reject(err) : resolve(JSON.parse(data));
+    fs.readFile('movies.json', { encoding: 'utf8' }, (err, movies) => {
+      err ? reject(err) : resolve(JSON.parse(movies));
     });
   });
 }
 
-function db_save(data) {
+function db_save(movies) {
   return new Promise((resolve, reject) => {
-    fs.writeFile('movies.json', { encoding: 'utf8' }, JSON.stringify(data), (err) => {
+    fs.writeFile('movies.json', JSON.stringify(movies), { encoding: 'utf8' }, (err) => {
       err ? reject(err) : resolve();
     });
   });
 }
 
-db_load().then((data) => {
+db_load().then((movies) => {
+
+  function findMovieById(id) {
+    return _.find(movies, (item) => {
+      return (item.id === id);
+    })
+  }
 
   app.get('/', (req, res) => {
     res.json({
@@ -85,15 +91,13 @@ db_load().then((data) => {
     //  - possibilité de donner un paramètre pour limiter le nombre d'items
     //    dans la collection répondue
     //  - possibilité de "paginer" les résultats.
-    res.json(data);
+    res.json(movies);
   });
 
   app.get('/movies/:id', (req, res) => {
     const { id } = req.params;
 
-    const movie = _.find(data, (item) => {
-      return (item.id === id);
-    });
+    const movie = findMovieById(id);
 
     if(movie) {
       res.json(movie);
@@ -107,15 +111,83 @@ db_load().then((data) => {
 
   app.post('/movies', (req, res) => {
     // ajout d'un élément dans la BDD
+    const { title, description, year, director, producer, id } = req.body;
 
+    let movie = findMovieById(id);
+
+    if(movie) {
+      res.status(409).json({
+        code: 409,
+        message: "Movie already exists !",
+      });
+    } else {
+      movie = { title, description, year, director, producer, id };
+      movies.push(movie);
+
+      db_save(movies).then(() => {
+        res.status(201).json(movie);
+      }).catch((err) => {
+        console.error("Erreur d'écriture dans la BDD");
+        console.error(err);
+      });
+
+      /*
+        version avec await :
+          - nécessite async (req, res) au lieu de (req, res)
+          - db_save().then(() => { ... }) remplacé par await db_save(); ...
+
+        try {
+          await db_save();
+          res.status(201).json(movie);
+        } catch(err) {
+          console.error(...);
+        }
+      */
+    }
   });
 
-  app.put('/movies/:id', (req, res) => {
+  app.put('/movies/:id', async (req, res) => {
+    const { title, description, year, director, producer } = req.body;
+    const { id } = req.params;
 
+    let movie = findMovieById(id);
+
+    if(movie) {
+      movie.title = title;
+      movie.description = description;
+      movie.year = year;
+      movie.director = director;
+      movie.producer = producer;
+
+      db_save(movies).then(() => {
+        res.status(204).end();
+      });
+
+    } else {
+      res.status(404).json({
+        code: 404,
+        message: "Not Found"
+      });
+    }
   });
 
   app.delete('/movies/:id', (req, res) => {
+    const { id } = req.params;
 
+    const removed = _.remove(movies, (item) => {
+      return item.id === id;
+    });
+
+    if(removed) {
+      db_save(movies).then(() => {
+        res.status(204).end();
+      });
+    } else {
+      res.status(404).json({
+        code: 404,
+        message: "Not Found"
+      });
+    }
   });
 
   app.listen(3000, () => {
@@ -123,5 +195,5 @@ db_load().then((data) => {
   });
 
 }).catch((err) => {
-  console.log('Impossible de charger la DB !');
+  console.log('Error while loading database');
 })
