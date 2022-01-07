@@ -4,6 +4,22 @@ const _ = require('lodash');
 const express = require('express');
 const app = express();
 
+// Middlewares
+
+// 406 & 415 status code middleware
+app.use((req, res, next) => {
+  if(!req.accepts('json')) {
+    return res.status(406).json({ code: 406, message: 'Not Acceptable' });
+
+  }
+
+  if(!req.is('json')) {
+    return res.status(415).json({ code: 415, message: 'Unsupported Media Type' });
+  }
+
+  next();
+});
+
 app.use(express.json());
 
 /*
