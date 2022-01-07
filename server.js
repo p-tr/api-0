@@ -4,6 +4,9 @@ const _ = require('lodash');
 const express = require('express');
 const app = express();
 
+const { connect, model, Schema } = require('mongoose');
+const uniqueValidator = require('mongoose-unique-validator');
+
 // Middlewares
 
 // 406 & 415 status code middleware
@@ -13,7 +16,7 @@ app.use((req, res, next) => {
 
   }
 
-  if(!req.is('json')) {
+  if(req.is('json') === false) {
     return res.status(415).json({ code: 415, message: 'Unsupported Media Type' });
   }
 
@@ -59,39 +62,42 @@ app.use(express.json());
 
 */
 
-// Fonctionnalités annexes
-//  ======================
-// Chargement de la base de données depuis le fichier movies.json :
-//  - lire le fichier
-//  - parser le texte JSON en objet JS
-//  - avoir la BDD dans une variable (en RAM)
-// Sauvegarde de la base de données dans le fichier movies.json :
-//  - sérialiser l'objet JS de la BDD en texte
-//  - écrire le nouveau contenu du fichier
+connect('mongodb://localhost:27017/api').then(() => {
 
-function db_load() {
-  return new Promise((resolve, reject) => {
-    fs.readFile('movies.json', { encoding: 'utf8' }, (err, movies) => {
-      err ? reject(err) : resolve(JSON.parse(movies));
-    });
+  // Mongoose Schemas
+  const movieSchema = new Schema({
+    title: {
+      type: String,
+      required: true,
+      unique: true
+    },
+
+    description: {
+      type: String,
+      default: ""
+    },
+
+    year: {
+      type: Number,
+      required: true
+    },
+
+    director: {
+      type: String,
+      required: true
+    },
+
+    producers: {
+      type: [String],
+      required: true
+    },
   });
-}
 
-function db_save(movies) {
-  return new Promise((resolve, reject) => {
-    fs.writeFile('movies.json', JSON.stringify(movies), { encoding: 'utf8' }, (err) => {
-      err ? reject(err) : resolve();
-    });
-  });
-}
+  movieSchema.plugin(uniqueValidator);
 
-db_load().then((movies) => {
+  const Movie = model('Movie', movieSchema);
 
-  function findMovieById(id) {
-    return _.find(movies, (item) => {
-      return (item.id === id);
-    })
-  }
+
 
   app.get('/', (req, res) => {
     res.json({
@@ -99,7 +105,7 @@ db_load().then((movies) => {
     });
   });
 
-  app.get('/movies', (req, res) => {
+  app.get('/movies', async (req, res) => {
     // Toute recherche est implémentée ici ;-)
     // Comme nous sommes en logique de ressource (une URI = une ressource)
     // les recherches se font via la QS :
@@ -107,13 +113,14 @@ db_load().then((movies) => {
     //  - possibilité de donner un paramètre pour limiter le nombre d'items
     //    dans la collection répondue
     //  - possibilité de "paginer" les résultats.
+    const movies = await Movie.find({}).exec();
     res.json(movies);
   });
 
-  app.get('/movies/:id', (req, res) => {
+  app.get('/movies/:id', async (req, res) => {
     const { id } = req.params;
 
-    const movie = findMovieById(id);
+    const movie = await Movie.findById(id).exec();
 
     if(movie) {
       res.json(movie);
@@ -125,60 +132,25 @@ db_load().then((movies) => {
     }
   });
 
-  app.post('/movies', (req, res) => {
+  app.post('/movies', async (req, res) => {
     // ajout d'un élément dans la BDD
-    const { title, description, year, director, producer, id } = req.body;
-
-    let movie = findMovieById(id);
-
-    if(movie) {
-      res.status(409).json({
-        code: 409,
-        message: "Movie already exists !",
-      });
-    } else {
-      movie = { title, description, year, director, producer, id };
-      movies.push(movie);
-
-      db_save(movies).then(() => {
-        res.status(201).json(movie);
-      }).catch((err) => {
-        console.error("Erreur d'écriture dans la BDD");
-        console.error(err);
-      });
-
-      /*
-        version avec await :
-          - nécessite async (req, res) au lieu de (req, res)
-          - db_save().then(() => { ... }) remplacé par await db_save(); ...
-
-        try {
-          await db_save();
-          res.status(201).json(movie);
-        } catch(err) {
-          console.error(...);
-        }
-      */
-    }
+    const { title, description, year, director, producers } = req.body;
+    const movie = await Movie.create({ title, description, year, director, producers });
+    res.status(201).json(movie);
   });
 
   app.put('/movies/:id', async (req, res) => {
-    const { title, description, year, director, producer } = req.body;
+    const { title, description, year, director, producers } = req.body;
     const { id } = req.params;
 
-    let movie = findMovieById(id);
+    const movie = await Movie.findByIdAndUpdate(
+      id,
+      { title, description, year, director, producers },
+      { runValidators: true }
+    );
 
     if(movie) {
-      movie.title = title;
-      movie.description = description;
-      movie.year = year;
-      movie.director = director;
-      movie.producer = producer;
-
-      db_save(movies).then(() => {
-        res.status(204).end();
-      });
-
+      res.status(204).end();
     } else {
       res.status(404).json({
         code: 404,
@@ -187,17 +159,13 @@ db_load().then((movies) => {
     }
   });
 
-  app.delete('/movies/:id', (req, res) => {
+  app.delete('/movies/:id', async (req, res) => {
     const { id } = req.params;
 
-    const removed = _.remove(movies, (item) => {
-      return item.id === id;
-    });
+    const removed = await Movie.findByIdAndRemove(id);
 
     if(removed) {
-      db_save(movies).then(() => {
-        res.status(204).end();
-      });
+      res.status(204).end();
     } else {
       res.status(404).json({
         code: 404,
@@ -211,5 +179,5 @@ db_load().then((movies) => {
   });
 
 }).catch((err) => {
-  console.log('Error while loading database');
+  console.log('Mongoose connection error');
 })
